@@ -1,0 +1,6 @@
+{
+  "base": "conll03",
+  "training": {
+    "d_ff": 4096
+  }
+}

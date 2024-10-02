@@ -1,0 +1,35 @@
+{
+  "dataset": {
+    "name": "ace05",
+    "features": [2, 3, 13],
+    "max_length": 512,
+    "entity_nest_depth": 1,
+    "splits": {
+      "train": "ace05_train.json",
+      "test": "ace05_test.json",
+      "eval": "ace05_dev.json",
+      "types": "ace05_types.json"
+    },
+    "data_dir": "ace05"
+  },
+  "training": {
+    "patience": 10,
+    "max_epochs": 25,
+    "num_epochs": 25,
+    "lr_t5": 4.907682226565861e-05,
+    "lr_iter": 0.0005904823926941837,
+    "lr_scheduler": "linear_with_warmup",
+    "weight_decay": 0.08225505874607635,
+    "warmup_steps": 0.01,
+    "task_weight_decay": 0.10930610221243138,
+    "task_warmup_steps": 0.05,
+    "task_lr_scheduler": "linear_with_warmup",
+
+    "batch_size": 8,
+    "dropout": 0.23395583304970166,
+    "d_ff": 0,
+    "activation_fn": "relu",
+    "gradient_accumulation": 1,
+    "metric_average": "micro"
+  }
+}

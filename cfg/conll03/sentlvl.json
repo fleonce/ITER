@@ -1,0 +1,10 @@
+{
+  "base": "conll03",
+  "dataset": {
+    "splits": {
+      "train": "conll03_strain.json",
+      "test": "conll03_stest.json",
+      "eval": "conll03_sval.json"
+    }
+  }
+}

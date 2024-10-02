@@ -1,0 +1,6 @@
+{
+  "base": "conll04",
+  "dataset": {
+    "features": [18]
+  }
+}

@@ -1,0 +1,10 @@
+# @package _global_
+
+smac3:
+  name: "ace05"
+  dataset: "ace05/hpo"
+  scenario:
+    min_budget: 3
+    max_budget: 25
+    walltime_limit: 288000  # 80 hours
+    n_trials: 100

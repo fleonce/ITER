@@ -1,0 +1,6 @@
+{
+  "base": "custom",
+  "dataset": {
+    "entity_nest_depth": 3
+  }
+}

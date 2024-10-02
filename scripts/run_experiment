@@ -1,0 +1,362 @@
+#!/usr/bin/env python3
+import collections
+import contextlib
+import logging
+import os
+import subprocess
+import sys
+import time
+import traceback
+from collections import defaultdict
+from json import load, dumps
+from pathlib import Path
+from time import sleep
+from typing import IO, AnyStr
+
+import torch
+
+from with_argparse import with_argparse
+
+
+@with_argparse
+def run_experiment(
+        models: list[str],
+        dataset: str,
+        n_splits: int,
+        experiment_dir: Path,
+        split_as_seed: bool = True,
+        log_ckpts: bool = False,
+        ignore_running: bool = False,
+        dev: bool = False,
+        use_bfloat16: bool = False,
+        use_fsdp: bool = False,
+        do_compile: bool = False,
+        load_ckpt: Path = None,
+        split_as_dataset: bool = False,
+):
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+    status_dir = experiment_dir / ".status"
+    logging_dir = experiment_dir / ".logs"
+    if dev:
+        status_dir = experiment_dir / ".dev_status"
+        logging_dir = experiment_dir / ".dev_logs"
+    logging_dir.mkdir(exist_ok=True)
+    stop_iteration = False
+    failed_runs = dict()
+    log_to_file = any_missing_runs(status_dir, models, n_splits, failed_runs, ignore_running, dev)
+    log_handlers = [
+        logging.StreamHandler(sys.stdout),
+    ]
+    if log_to_file:
+        log_handlers.append(
+            file := logging.FileHandler(
+                experiment_dir / (("run_experiment" if not dev else "dev_run_experiment") + ".log"),
+                mode='a'
+            )
+        )
+
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        level=logging.INFO,
+        handlers=log_handlers
+    )
+    logger = logging.getLogger("run_experiment")
+    if not log_to_file:
+        experiment_summary(
+            models=models,
+            n_splits=n_splits,
+            experiment_dir=experiment_dir,
+            logger=logger
+        )
+        return
+
+    logger.info(f"Waiting 5 seconds to start (dev mode = {dev})")
+    logger.info(f"Dataset = {dataset}")
+    time.sleep(5)
+
+    # env variables
+    if dev:
+        os.environ["WANDB_MODE"] = "disabled"
+    os.environ["TOKENIZERS_PARALLELISM"] = "true"
+
+    def delete_run_file(filepath: Path):
+        if filepath.exists():
+            try:
+                os.remove(run_file)
+            except FileNotFoundError:
+                logger.warning(f"Could not remove file {run_file}")
+
+    if ignore_running and not dev:
+        runs = []
+        for run_info in estimate_missing_runs(status_dir, models, n_splits, failed_runs, ignore_running, dev):
+            model, run_id = run_info
+            run_name = get_run_name(model, run_id)
+            run_file = status_dir / model / run_name
+            if run_file.exists():
+                delete_run_file(run_file)
+                runs.append(run_info)
+        if len(runs) > 0:
+            logger.info(f"As {ignore_running=} I will delete remaining run files")
+            logger.info(f"Deleted {len(runs)} run info files: {runs}")
+
+    is_rank_zero = "RANK" not in os.environ or int(os.environ["RANK"]) == 0
+
+    while (
+        (run_info := next(estimate_missing_runs(
+            status_dir, models, n_splits, failed_runs, ignore_running or use_fsdp, dev
+        ), None)) is not None
+        and not stop_iteration
+    ):
+        model, run_id = run_info
+        model_dir = experiment_dir / model
+        if dev:
+            model_dir = model_dir / ".dev"
+            model_dir.mkdir(parents=True, exist_ok=True)
+        model_stat_dir = status_dir / model
+
+        run_name = get_run_name(model, run_id)
+        run_file = model_stat_dir / run_name
+        run_done_file = run_file.with_name(run_name + "_done")
+        if not is_rank_zero:
+            while not run_file.exists():
+                logger.info(f"Waiting for main process startup")
+                sleep(10)
+        run_file.touch(exist_ok=True) if not dev and is_rank_zero else None
+        log_file = logging_dir / model / (run_name + ".log")
+        if not is_rank_zero:
+            log_file = logging_dir / model / (run_name + f"_rank{os.environ['RANK']}.log")
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        run_args = [
+            "--transformer",
+            model,
+            "--dataset",
+            dataset,
+            "--no_use_tqdm",  # no progress bars
+            # "--no_verbose"  verbose is the default
+            # "--log_file",
+            # log_file.as_posix(),
+            # "--log_append",  no appending is default
+        ]
+        if split_as_dataset:
+            run_args = [
+                "--transformer", model,
+                "--dataset", f"{dataset}_split{run_id}",
+                "--no_use_tqdm"
+            ]
+        if use_bfloat16:
+            run_args.append("--use_bfloat16")
+        if use_fsdp:
+            run_args.append("--use_fsdp")
+        if do_compile:
+            run_args.append("--do_compile")
+        if split_as_seed:
+            run_args.extend(['--seed', str(run_id)])
+        if load_ckpt:
+            run_args.extend(['--load_ckpt', load_ckpt.as_posix()])
+        if log_ckpts and not dev:
+            run_args.extend(['--model_path', model_dir / get_run_name(model, run_id)])
+
+        process_args = ["python3", "train.py"] + run_args
+        try:
+            with open(log_file, 'w') as logfile:
+                output: subprocess.CompletedProcess = run_subprocess_into_file(
+                    process_args, logfiles=[logfile, file.stream], stderr=subprocess.STDOUT)
+        except KeyboardInterrupt:
+            print(f"Received KeyboardInterrupt, aborting..")
+            sleep(1)
+            delete_run_file(run_file)
+            break
+        except Exception:
+            logger.info(f"Caught exception when running model {model} run {run_id}")
+            print(traceback.format_exc())
+            sleep(1)
+            delete_run_file(run_file)
+            continue
+        if output.returncode == 0:
+            run_done_file.touch(exist_ok=True) if not dev and is_rank_zero else None
+            if not is_rank_zero:
+                while not run_done_file.exists():
+                    logger.info("Waiting for main process finish")
+                    sleep(10)
+        else:
+            delete_run_file(run_file)
+            failed_runs[run_info] = failed_runs.get(run_info, 0) + 1
+        logger.info(f"Process {model}/{run_id} produced return code {output.returncode}")
+        for _ in range(3):
+            sleep(1)
+            print(".")
+
+    if failed_runs:
+        logger.info(f"Running experiments produced {len(failed_runs)} failed runs: {failed_runs}")
+
+    experiment_summary(
+        models=models,
+        n_splits=n_splits,
+        experiment_dir=experiment_dir,
+        logger=logger,
+    )
+
+
+def experiment_summary(models: list[str], n_splits: int, experiment_dir: Path, logger):
+    for model in models:
+        skip_model = False
+        model_metrics_dict = defaultdict(list)
+        model_bound_metrics_dict = defaultdict(list)
+        for run_id in range(n_splits):
+            model_dir = experiment_dir / model / get_run_name(model, run_id)
+            model_metrics = model_dir / "metrics.json"
+            if not model_metrics.exists():
+                skip_model = True
+                logger.info(f"Skipping model '{model}' because metrics file {model_metrics} is not available")
+                break
+            with open(model_metrics) as f:
+                json_blob = load(f)
+                for k, v in json_blob["test_metrics"].items():
+                    model_metrics_dict[k].append(v)
+                for k, v in json_blob["test_metrics_bounds"].items():
+                    model_bound_metrics_dict[k].append(v)
+
+        if skip_model:
+            continue
+        model_metrics_dict = collections.OrderedDict({k: torch.tensor(v) for k, v in model_metrics_dict.items()})
+        model_bound_metrics_dict = collections.OrderedDict(
+            {k: torch.tensor(v) for k, v in model_bound_metrics_dict.items()}
+        )
+        out_model_metrics_dict = collections.OrderedDict()
+        argmax_key = "f1" if torch.cat(tuple(v for k, v in model_metrics_dict.items() if "_" not in k), dim=-1).max() > 0 else "ner_f1"
+        argmax = model_metrics_dict[argmax_key].argmax()
+        for k, v in model_metrics_dict.items():
+            v = v.squeeze()
+            if not v.dtype.is_floating_point:
+                v = v.to(torch.float)
+            bound = (0., 0., 0.,)
+            if k in model_bound_metrics_dict:
+                bv = model_bound_metrics_dict[k].squeeze()
+                if bv.dim() == 0:
+                    bound = (0., bv.item(), bv.item())
+                else:
+                    bound = torch.std_mean(bv.to(torch.float64) if not bv.is_floating_point() else bv) + (bv[argmax].item(),)
+            if v.dim() == 0:
+                out_model_metrics_dict[k] = (0., v.item(), v.item(),) + bound
+            else:
+                out_model_metrics_dict[k] = torch.std_mean(v.to(torch.float64) if not v.is_floating_point() else v) + (v[argmax].item(),) + bound
+
+        for k, v in out_model_metrics_dict.copy().items():
+            std_dev, mean, maximum, bound_std, bound_mean, bound_maximum = v
+            del out_model_metrics_dict[k]
+            out_model_metrics_dict[k.lower()] = (
+                f"{mean:.6f} ± {std_dev:.4f} / {bound_mean:.6f} ± {bound_std:.4f} "
+                f"(best is {maximum:.6f} / {bound_maximum:.6f})"
+            )
+        logger.info(
+            f"Model '{model}' results with {n_splits} runs (best w.r.t {argmax_key} "
+            f"was {get_run_name(model, argmax)} out of "
+            f"{', '.join(f'{v:.6f}' for v in model_metrics_dict[argmax_key].tolist())})"
+        )
+        logger.info(dumps(out_model_metrics_dict, indent=2, ensure_ascii=False))
+
+
+def get_run_name(_model, run_id) -> str:
+    return f"{run_id:04d}"
+
+
+def any_missing_runs(
+    status_dir: Path,
+    models: list[str],
+    n_splits: int,
+    failed_runs: dict,
+    ignore_running: bool = False,
+    dev: bool = False,
+):
+    return next(estimate_missing_runs(status_dir, models, n_splits, failed_runs, ignore_running, dev), None) is not None
+
+
+def estimate_missing_runs(
+        status_dir: Path,
+        models: list[str],
+        n_splits: int,
+        failed_runs: dict,
+        ignore_running: bool = False,
+        dev: bool = False,
+):
+    assert n_splits > 0
+    assert len(models) > 0
+
+    missing_runs = []
+    for model in models:
+        model_dir = status_dir / model
+        model_dir.mkdir(parents=True, exist_ok=True)
+        for run_id in range(n_splits):
+            run_info = model, run_id
+            if run_info in failed_runs and failed_runs[run_info] >= 1:
+                continue
+            run_name = get_run_name(model, run_id)
+            run_is_started = (model_dir / run_name).exists()
+            run_is_finished = (model_dir / (run_name + "_done")).exists()
+            if not run_is_finished and (ignore_running or not run_is_started):
+                yield model, run_id
+                missing_runs.append((model, run_id))
+    pass
+
+
+def run_subprocess_into_file(
+    *popenargs, logfiles: list[IO[AnyStr]], capture_output=False, check=False, **kwargs
+):
+    if capture_output:
+        if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+            raise ValueError('stdout and stderr arguments may not be used '
+                             'with capture_output.')
+        kwargs['stdout'] = subprocess.PIPE
+        kwargs['stderr'] = subprocess.PIPE
+    if 'stdout' not in kwargs:
+        kwargs['stdout'] = subprocess.PIPE
+    if 'stderr' not in kwargs:
+        kwargs['stderr'] = subprocess.PIPE
+
+    process: subprocess.Popen[bytes]
+    with subprocess.Popen(*popenargs, **kwargs) as process:
+        try:
+            moin = True
+            leftovers = bytearray()
+            while moin:
+                while process.stdout.readable() > 0:
+                    stdout_size = min(256, process.stdout.readable())
+                    if stdout_size > 0:
+                        line: bytes = process.stdout.read(stdout_size)
+                        if not line:
+                            moin = False
+                            break
+                        if leftovers is not None and len(leftovers) > 0:
+                            leftovers.extend(line)
+                            line = bytes(line)
+                            leftovers = None
+                        try:
+                            line: str = line.decode("utf-8")
+                            sys.stdout.write(line)
+                            for logfile in logfiles:
+                                logfile.write(line)
+                                logfile.flush()
+                        except UnicodeDecodeError:
+                            if leftovers is None:
+                                leftovers = bytearray()
+                            leftovers.extend(line)
+                # else:
+#                time.sleep(0.25)
+            process.wait()
+        except subprocess.TimeoutExpired as exc:
+            process.kill()
+            process.wait()
+            raise
+        except:  # Including KeyboardInterrupt, communicate handled that.
+            process.kill()
+            # We don't call process.wait() as .__exit__ does that for us.
+            raise
+        retcode = process.poll()
+        if check and retcode:
+            raise subprocess.CalledProcessError(retcode, process.args,
+                                     output=None, stderr=None)
+    return subprocess.CompletedProcess(process.args, retcode, None, None)
+
+
+run_experiment()

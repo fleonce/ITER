@@ -1,0 +1,8 @@
+{
+  "base": "conll04",
+  "training": {
+    "lr_t5": 2e-05,
+    "lr_iter": 3e-04,
+    "d_ff": 4096
+  }
+}

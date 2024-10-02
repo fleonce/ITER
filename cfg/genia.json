@@ -1,0 +1,34 @@
+{
+  "dataset": {
+    "name": "genia",
+    "features": 10784,
+    "max_length": 4096,
+    "entity_nest_depth": 4,
+    "splits": {
+      "train": "genia_train_dev.json",
+      "test": "genia_test.json",
+      "eval": "genia_test.json",
+      "types": "genia_types.json"
+    },
+    "data_dir": "genia"
+  },
+  "training": {
+    "patience": 10,
+    "max_epochs": 20,
+    "num_epochs": 20,
+    "lr_t5": 0.0001,
+    "lr_iter": 0.0001,
+    "lr_scheduler": "linear_with_warmup",
+    "weight_decay": 0.0,
+    "warmup_steps": 0.05,
+    "task_weight_decay": 0.0,
+    "task_warmup_steps": 0.05,
+    "task_lr_scheduler": "linear_with_warmup",
+    "activation_fn": "relu",
+    "dropout": 0.3,
+
+    "batch_size": 8,
+    "metric_average": "micro",
+    "optimize_for": "ner"
+  }
+}

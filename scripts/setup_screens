@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+import os
+import subprocess
+
+from with_argparse import with_argparse
+
+
+def screen_name(pattern, i):
+    return pattern.format(i)
+
+
+def dispatch_command(session_name, cmd):
+    proc = subprocess.run(["/usr/bin/screen", "-S", session_name, "-X", "stuff", cmd + "\n"])
+    assert proc.returncode == 0, f"Could not dispatch command '{cmd}' to {session_name}"
+
+
+@with_argparse
+def setup_screens(
+    n_gpus: int = 0,
+    gpu_offset: int = 0,
+    name_pattern: str = "gpu{}",
+    commands: list[str] = None,
+    with_cwd: bool = True,
+    with_tmout: bool = True,
+    with_rank: bool = False,
+):
+    commands = commands or []
+    if n_gpus == 0:
+        import torch
+        n_gpus = torch.cuda.device_count()
+        print(f"{n_gpus=}")
+    if n_gpus == 0:
+        return
+    if not commands:
+        print(f"No commands supplied")
+        exit(1)
+
+    for rank, gpu_id in enumerate(range(gpu_offset, gpu_offset + n_gpus)):
+        name = screen_name(name_pattern, gpu_id)
+        process: subprocess.CompletedProcess = subprocess.run(["/usr/bin/screen", "-dmS", name, "bash"])
+        assert process.returncode == 0, f"Could not create screen for {name}"
+        if not with_rank:
+            dispatch_command(name, f"export CUDA_VISIBLE_DEVICES={gpu_id}")
+        if with_tmout:
+            dispatch_command(name, f"export TMOUT=0")
+        if with_rank:
+            dispatch_command(name, f"export WORLD_SIZE={n_gpus} RANK={rank}")
+
+        if with_cwd:
+            dispatch_command(name, "cd " + os.getcwd())
+
+        for command in commands:
+            dispatch_command(name, command)
+    print(f"Created {n_gpus} screens with exported environment variables")
+
+
+setup_screens()

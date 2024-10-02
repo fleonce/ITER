@@ -1,0 +1,36 @@
+[project]
+name = "iter"
+description = "Implementation for our paper ITER: Iterative Transformer-based Entity Recognition and Relation Extraction"
+version = "1.0.0"
+dependencies = [
+    "torchcheck>=1.0.6",
+    "safetensors_dataset>=0.0.4",
+    "with_argparse>=0.0.7rc1",
+    "gdown>=5.0.0",
+    "torch>=2.1.2",
+    "torcheval>=0.0.7",
+    "transformers>=4.36.0",
+    "safetensors>=0.4.2",
+    "tqdm>=4.66.1",
+    "py-make>=0.1.1",
+    "pyrootutils>=1.0.4",
+]
+requires-python = ">= 3.10"
+
+[project.urls]
+# repository = "https://github.com"
+
+[project.optional-dependencies]
+visuals = [
+    "matplotlib>=3.8.3"
+]
+ace05 = [
+    "truecase>=0.0.14"
+]
+hpo = [
+    "smac>=2.0.2",
+    "hydra-core>=1.3.2"
+]
+
+[tool.setuptools]
+packages = ["iter", "iter.datasets", "iter.misc", "iter.data", "iter.tools"]

@@ -1,0 +1,15 @@
+{
+  "base": "conll04",
+  "dataset": {
+    "splits": {
+      "train": "conll04_train.json",
+      "test": "conll04_test.json",
+      "eval": "conll04_dev.json",
+      "types": "conll04_types.json"
+    }
+  },
+  "training": {
+    "eval_batch_size": 64,
+    "num_epochs": 10
+  }
+}

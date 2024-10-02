@@ -1,0 +1,10 @@
+{
+  "base": "genia",
+  "dataset": {
+    "splits": {
+      "test": "genia_test_entities.json",
+      "eval": "genia_test_entities.json",
+      "types": "genia_types.json"
+    }
+  }
+}

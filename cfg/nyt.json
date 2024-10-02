@@ -1,0 +1,33 @@
+{
+  "dataset": {
+    "name": "nyt",
+    "features": 544,
+    "max_length": 512,
+    "entity_nest_depth": 2,
+    "splits": {
+      "train": "nyt_train.json",
+      "test": "nyt_test.json",
+      "eval": "nyt_dev.json",
+      "types": "nyt_types.json"
+    },
+    "data_dir": "nyt"
+  },
+  "training": {
+    "patience": 2,
+    "max_epochs": 100,
+    "num_epochs": 100,
+    "lr_t5": 0.00025751266619468606,
+    "lr_iter": 0.0001226396031200263,
+    "lr_scheduler": "linear_with_warmup",
+    "weight_decay": 0.015941446344895593,
+    "warmup_steps": 0.2,
+    "task_weight_decay": 0.0747626275865123,
+    "task_warmup_steps": 0.0,
+    "task_lr_scheduler": "linear",
+    "activation_fn": "relu",
+    "dropout": 0.3,
+
+    "batch_size": 8,
+    "metric_average": "micro"
+  }
+}

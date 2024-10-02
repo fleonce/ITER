@@ -1,0 +1,10 @@
+# @package _global_
+
+smac3:
+  name: "scierc"
+  dataset: "scierc/hpo"
+  scenario:
+    min_budget: 5
+    max_budget: 25
+    walltime_limit: 148000  # 4 hours
+    n_trials: 100

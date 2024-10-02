@@ -1,0 +1,8 @@
+{
+  "base": "ace05",
+  "training": {
+    "lr_scheduler": "inverse_sqrt_with_warmup",
+    "task_lr_scheduler": "inverse_sqrt_with_warmup",
+    "link_lr_scheduler": "inverse_sqrt_with_warmup"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "base": "scierc",
+  "dataset": {
+    "features": [5, 8, 9, 13, 16, 18, 20]
+  },
+  "training": {
+    "d_ff": 4096,
+    "max_epochs": 25,
+    "num_epochs": 25,
+    "batch_size": 8,
+    "gradient_accumulation": 1,
+    "dropout": 0.3,
+    "lr_t5": 3e-5,
+    "lr_iter": 2e-4,
+    "warmup_steps": 0.0,
+    "weight_decay": 0.1,
+    "task_warmup_steps": 0.0,
+    "task_weight_decay": 0.1
+  }
+}

@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+import torch
+from transformers import AutoModel, AutoModelForSeq2SeqLM, AutoConfig
+
+from with_argparse import with_argparse
+
+
+@with_argparse
+def param_counts(model: str, generative: bool = False, compare_to: int = 0, trust_remote_code: bool = False):
+    with torch.device("meta"):
+        model_cls = AutoModel
+        if generative:
+            model_cls = AutoModelForSeq2SeqLM
+        config = AutoConfig.from_pretrained(model, trust_remote_code=trust_remote_code)
+        model = model_cls.from_config(config, trust_remote_code=trust_remote_code)
+        numel = sum(param.numel() for param in model.parameters())
+        print(f"Total parameters = {numel}")
+        if numel > 1e9:
+            print(f"Params in billions = {numel / 1e9} B")
+        elif numel > 1e6:
+            print(f"Params in millions = {numel / 1e6} M")
+        if compare_to:
+            print(f"Ratio of parameters = {numel / compare_to}")
+
+
+param_counts()

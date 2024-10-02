@@ -1,0 +1,23 @@
+{
+  "base": "scierc",
+  "dataset": {
+    "features": [5, 9, 13, 16]
+  },
+  "training": {
+    "patience": 5,
+    "num_epochs": 25,
+    "max_epochs": 25,
+    "lr_t5": 3e-05,
+    "lr_iter": 0.0001,
+    "lr_scheduler": "linear_with_warmup",
+    "weight_decay": 0.1,
+    "warmup_steps": 0.05,
+    "task_weight_decay": 0.1,
+    "task_warmup_steps": 0.0,
+    "task_lr_scheduler": "linear_with_warmup",
+    "activation_fn": "relu",
+    "dropout": 0.3,
+    "d_ff": 1500,
+    "batch_size": 8
+  }
+}

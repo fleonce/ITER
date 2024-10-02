@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+from with_argparse import with_argparse
+
+
+@with_argparse
+def convert_features(
+    number: int,
+):
+    feat_map = {
+        0: None,
+        1: (1, "Sum representations"),
+        2: None,
+        3: None,
+        4: None,
+        5: (5, "Additional LR class (required for nested entities)"),
+        6: None,
+        7: (7, "Additional RR class (required when training with CE loss)"),
+        8: None,
+        9: (9, "Nest depth is greater than 1, i.e. nested entities"),
+        10: (10, "Do not decode tokens when generating, faster"),
+        11: (11, "NER only, dont link entities"),
+        12: None,
+        13: (13, "Skip empty examples during training (no entities)"),
+    }
+
+    exp = 0
+    while number != 0:
+        if (number & (2 ** exp)) != 0:
+            if exp in feat_map and feat_map.get(exp) is not None:
+                new_exp, desc = feat_map.get(exp, None)
+                print(f"Bit {exp} enabled: now is {new_exp} - {desc}")
+            else:
+                print(f"Bit {exp} enabled")
+            number = number & ~(2 ** exp)
+        exp += 1
+
+
+if __name__ == "__main__":
+    convert_features()

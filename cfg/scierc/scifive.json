@@ -1,0 +1,23 @@
+{
+  "base": "scierc",
+  "training": {
+    "patience": 10,
+    "max_epochs": 25,
+    "num_epochs": 25,
+    "lr_t5": 8.771380343280564e-06,
+    "lr_iter": 2.2121628511587814e-05,
+    "lr_scheduler": "constant_with_warmup",
+    "weight_decay": 0.0851136671516857,
+    "task_weight_decay": 0.07861954493335209,
+    "task_warmup_steps": 0.05,
+    "task_lr_scheduler": "linear_with_warmup",
+
+    "batch_size": 8,
+    "dropout": 0.28184968246925673,
+    "d_ff": 1500,
+    "activation_fn": "gelu",
+    "gradient_accumulation": 1,
+    "metric_average": "micro"
+
+  }
+}

@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+import sys
+import torch
+
+if len(sys.argv) <= 1:
+    print(sys.argv[0] + " <path>")
+    exit(1)
+
+path = sys.argv[1]
+ckpt = torch.load(path)
+
+print(ckpt['lr_scheduler']['base_lrs'])
+print(ckpt['optimizer']['param_groups'])

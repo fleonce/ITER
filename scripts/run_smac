@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+import logging
+import traceback
+from datetime import datetime
+from functools import partial
+from pathlib import Path
+from typing import Any
+
+from ConfigSpace import Configuration, ConfigurationSpace
+from hydra import initialize_config_dir, compose
+from hydra.utils import instantiate
+from smac import Scenario
+from smac.facade import AbstractFacade
+
+from iter.datasets import CoNLL
+from iter.datasets.training import Hparams
+from with_argparse import with_argparse
+from iter.misc.smac3 import workspace_init
+
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%m/%d/%Y %H:%M:%S",
+    level=logging.INFO,
+)
+
+
+def config_to_hparams(
+        config: Configuration,
+        dataset: str,
+):
+    base_config = config.config_space.get_default_configuration()
+    base_config = dict(base_config)
+    config = dict(base_config, **config)
+
+    def log_default_value(key, val):
+        return val
+
+    default_hparams = Hparams.from_name(dataset).__dict__.copy()
+    mapped_hparams = {
+        k: config[k] if k in config else log_default_value(k, v) for k, v in default_hparams.items()
+    }
+    missing_keys = {k for k in config.keys() if k not in mapped_hparams}
+    assert not missing_keys, missing_keys
+    mapped_hparams = Hparams(**mapped_hparams)
+    return mapped_hparams
+
+
+def startup(
+        name: str,
+        dataset: str,
+        transformer: str,
+        cmdline_args: dict[str, Any],
+        cs: ConfigurationSpace,
+        scenario: partial[Scenario],
+        facade: partial[AbstractFacade],
+) -> AbstractFacade:
+    logdir = Path.cwd() / "smac3" / "logs" / name / (name + "_" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+    if not logdir.exists():
+        logdir.mkdir(parents=True, exist_ok=True)
+
+    scenario = scenario(
+        configspace=cs,
+        output_directory=logdir,
+    )
+
+    train_fn_kwargs = {
+        'transformer': transformer,
+        'dataset': dataset,
+        'scenario': scenario,
+        'logdir': logdir,
+        'overrides': cmdline_args,
+    }
+
+    def local_train_fn(config, seed):
+        try:
+            return train_fn(config=config, **train_fn_kwargs)
+        except BaseException as error:
+            print(traceback.format_exc())
+            exit(1)
+
+    return facade(
+        scenario=scenario,
+        target_function=local_train_fn,
+    )
+
+
+def train_fn(
+        transformer: str,
+        dataset: str,
+        config: Configuration,
+        scenario: Scenario,
+        logdir: Path,
+        overrides: dict
+):
+    try:
+        from train import do_train
+    except ImportError as exc:
+        print("well..", exc)
+        exit(1)
+
+    hparams = config_to_hparams(config, dataset)
+    date = datetime.now()
+    date_fmt = date.strftime('%Y-%m-%d_%H-%M-%S')
+    model_path = logdir / date_fmt
+
+    if dataset == "ade":
+        # randomly select one ade split
+        dataset = "ade_split0"
+    dataset = CoNLL.from_name(dataset)
+    dataset.setup_hpo_dataset()
+    metrics = do_train(
+        transformer=transformer,
+        dataset=dataset,
+        hparams=hparams,
+        model_path=model_path.as_posix(),
+        log_file=None,
+        log_append=False,
+        seed=overrides.get('seed', 42),
+        use_bfloat16=overrides.get('use_bfloat16', False),
+        num_epochs=0,
+        verbose=False,
+        visualize=overrides.get('visualize', False),
+        dont_ckpt=overrides.get('dont_ckpt', False),
+        do_compile=overrides.get('do_compile', False),
+        show_bound_metrics=overrides.get('show_bound_metrics', False),
+        features=None,
+    )
+
+    # smac3 wants to minimize, so invert the metrics, 1 - f1 \leadsto 0 when f1 \leadsto 1
+    metrics = ~metrics
+
+    # remove unwanted metrics so smac does not complain
+    def filter_metrics(m: dict):
+        return {k: v for k, v in m.items() if k in scenario.objectives}
+
+    metrics = filter_metrics(metrics.__dict__)
+    # print({k: v for k, v in metrics.items()})
+    return metrics
+
+
+@workspace_init
+@with_argparse
+def run_smac(
+        smac_experiment: str,
+        smac_config: str = "config.yaml",
+        smac_overrides: list[str] = None,
+        use_bfloat16: bool = False,
+        seed: list[int] = 42,
+        visualize: bool = False,
+        dont_ckpt: bool = False,
+        do_compile: bool = False,
+        show_bound_metrics: bool = False,
+):
+    smac_overrides = smac_overrides or []
+
+    cwd = Path.cwd()
+    initialize_config_dir(
+        (cwd / "smac3").as_posix(),
+        version_base="1.2"
+    )
+    cfg = instantiate(compose(
+        config_name=smac_config,
+        overrides=["experiment=" + smac_experiment] + smac_overrides if smac_experiment is not None else smac_overrides,
+    ))
+    cmdline_args = {
+        'use_bfloat16': use_bfloat16,
+        'visualize': visualize,
+        'dont_ckpt': dont_ckpt,
+        'do_compile': do_compile,
+        'show_bound_metrics': show_bound_metrics,
+        'seed': seed,
+    }
+
+    smac = startup(**cfg["smac3"], cmdline_args=cmdline_args)
+
+    incumbent = smac.optimize()
+    print(smac.scenario.output_directory)
+    print(incumbent)
+
+
+if __name__ == "__main__":
+    run_smac()

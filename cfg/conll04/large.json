@@ -1,0 +1,11 @@
+{
+  "base": "conll04",
+  "dataset": {
+    "features": 0
+  },
+  "training": {
+    "lr_t5": 2e-5,
+    "lr_iter": 1e-4,
+    "d_ff": 4096
+  }
+}

@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+import torch
+
+from iter import ITERConfig
+from iter.datasets import CoNLL
+from with_argparse import with_argparse
+
+
+@with_argparse
+def token_counts(dataset: str, transformer: str):
+    config = ITERConfig(transformer)
+    tokenizer = config.guess_tokenizer_class(use_fast=True).from_pretrained(transformer)
+    dataset = CoNLL.from_name(dataset, tokenizer=tokenizer)
+    dataset.setup_dataset()
+
+    for split, elements in dataset.data.items():
+        lengths = []
+        for element in elements:
+            lengths.append(element['input_ids'].numel())
+        lengths = torch.tensor(lengths)
+        print(split, lengths.mean(dtype=torch.float).item(), lengths.min().item(), lengths.max().item())
+    pass
+
+
+token_counts()

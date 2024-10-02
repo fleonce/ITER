@@ -1,0 +1,98 @@
+defaults:
+  - _self_
+  - experiment: null
+
+_convert_: "all"
+seed: 42
+smac3:
+  name: ???
+  transformer: ???
+  dataset: ???
+  scenario:
+    _target_: "smac.scenario.Scenario"
+    _partial_: true
+    n_trials: 100
+    deterministic: true
+    walltime_limit: 3600
+    objectives: "ere_f1"
+    min_budget: 1
+    max_budget: 5
+    seed: ${seed}
+  facade:
+    _target_: "smac.facade.HyperparameterOptimizationFacade"
+    _partial_: true
+    overwrite: true
+    logging_level: 10  # debug logging
+  cs:
+    _target_: "iter.misc.smac3.configspace_init"
+    seed: ${seed}
+    name: "smac3"
+    conditions: {}
+    hyperparameters:
+      d_ff:
+        _target_: "ConfigSpace.Categorical"
+        name: "d_ff"
+        items: [1500, 150]
+        default: 1500
+      dropout:
+        _target_: "ConfigSpace.Float"
+        name: "dropout"
+        bounds: [0.0, 0.3]
+        default: 0.3
+      max_epochs:
+        _target_: "ConfigSpace.Categorical"
+        name: "max_epochs"
+        items: [25]
+        default: 25
+      batch_size:
+        _target_: "ConfigSpace.Categorical"
+        name: "gradient_accumulation"
+        items: [1, 4]
+        default: 1
+      learning_rate:
+        _target_: "ConfigSpace.Float"
+        name: "lr_t5"
+        bounds: [1e-6, 1e-3]
+        default: 5e-5
+        log: true
+      task_learning_rate:
+        _target_: "ConfigSpace.Float"
+        name: "lr_iter"
+        bounds: [2e-6, 1e-3]
+        default: 3e-4
+        log: true
+      activation_fn:
+        _target_: "ConfigSpace.Categorical"
+        name: "activation_fn"
+        items: ["relu"]
+        default: "relu"
+      weight_decay:
+        _target_: "ConfigSpace.Float"
+        name: "weight_decay"
+        bounds: [0.0, 0.1]
+        default: 0.02
+      task_weight_decay:
+        _target_: "ConfigSpace.Float"
+        name: "task_weight_decay"
+        bounds: [0.0, 0.2]
+        default: 0.02
+      warmup_steps:
+        _target_: "ConfigSpace.Categorical"
+        name: "warmup_steps"
+        items: [0.01, 0.05]
+        default: 0.01
+      task_warmup_steps:
+        _target_: "ConfigSpace.Categorical"
+        name: "task_warmup_steps"
+        items: [0.01, 0.05]
+        default: 0.01
+      learning_rate_schedule:
+        _target_: "ConfigSpace.Categorical"
+        name: "lr_scheduler"
+        items: ["linear_with_warmup", "inverse_sqrt_with_warmup"]
+        default: "inverse_sqrt_with_warmup"
+      task_learning_rate_schedule:
+        _target_: "ConfigSpace.Categorical"
+        name: "task_lr_scheduler"
+        items: ["linear_with_warmup", "inverse_sqrt_with_warmup"]
+        default: "inverse_sqrt_with_warmup"

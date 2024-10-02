@@ -1,0 +1,33 @@
+{
+  "dataset": {
+    "name": "ade_split%split%",
+    "features": [5, 9],
+    "max_length": 512,
+    "entity_nest_depth": 2,
+    "splits": {
+      "train": "ade_split_%split%_train.json",
+      "test": "ade_split_%split%_test.json",
+      "eval": "ade_split_%split%_test.json",
+      "types": "ade_types.json"
+    },
+    "data_dir": "ade"
+  },
+  "training": {
+    "patience": 10,
+    "max_epochs": 20,
+    "num_epochs": 20,
+    "lr_t5": 0.0002027176104104668,
+    "lr_iter": 0.0002852974822336359,
+    "lr_scheduler": "constant_with_warmup",
+    "weight_decay": 0.02775960977317661,
+    "warmup_steps": 0.1,
+    "task_weight_decay": 0.026497526951596597,
+    "task_warmup_steps": 0.01,
+    "task_lr_scheduler": "linear_with_warmup",
+    "activation_fn": "relu",
+    "dropout": 0.3,
+
+    "batch_size": 8,
+    "metric_average": "micro"
+  }
+}

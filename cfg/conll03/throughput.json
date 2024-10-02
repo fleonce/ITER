@@ -1,0 +1,7 @@
+{
+  "base": "conll03",
+  "training": {
+    "eval_batch_size": 64,
+    "num_epochs": 10
+  }
+}

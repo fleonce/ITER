@@ -1,0 +1,33 @@
+{
+  "dataset": {
+    "name": "scierc",
+    "features": [5, 8, 9, 13],
+    "max_length": 512,
+    "entity_nest_depth": 3,
+    "splits": {
+      "train": "scierc_train.json",
+      "test": "scierc_test.json",
+      "eval": "scierc_dev.json",
+      "types": "scierc_types.json"
+    },
+    "data_dir": "scierc"
+  },
+  "training": {
+    "patience": 10,
+    "max_epochs": 25,
+    "num_epochs": 25,
+    "lr_t5": 7.411299781083242e-05,
+    "lr_iter": 0.00013034779141086236,
+    "lr_scheduler": "linear_with_warmup",
+    "weight_decay": 0.05026370931051921,
+    "warmup_steps": 0.01,
+    "task_weight_decay": 0.020294308573206424,
+    "task_warmup_steps": 0.05,
+    "task_lr_scheduler": "linear_with_warmup",
+    "activation_fn": "relu",
+    "dropout": 0.051157237106187456,
+
+    "batch_size": 8,
+    "metric_average": "micro"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "base": "scierc",
+  "dataset": {
+    "features": [5, 8, 9, 13, 16, 18]
+  },
+  "training": {
+    "d_ff": 0
+  }
+}

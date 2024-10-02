@@ -1,0 +1,10 @@
+# @package _global_
+
+smac3:
+  name: "conll04"
+  dataset: "conll04"
+  scenario:
+    min_budget: 5
+    max_budget: 30
+    walltime_limit: 28800  # 8 hours
+    n_trials: 200

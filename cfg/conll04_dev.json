@@ -1,0 +1,35 @@
+{
+  "dataset": {
+    "name": "conll04",
+    "features": [4, 7, 12, 14],
+    "max_length": 512,
+    "entity_nest_depth": 1,
+    "splits": {
+      "train": "conll04_train.json",
+      "test": "conll04_test.json",
+      "eval": "conll04_dev.json",
+      "types": "conll04_types.json"
+    },
+    "data_dir": "conll04"
+  },
+  "training": {
+    "patience": 10,
+    "max_epochs": 100,
+    "num_epochs": 1,
+    "lr_t5": 5e-4,
+    "lr_iter": 3e-3,
+    "lr_scheduler": "linear_with_warmup",
+    "weight_decay": 0.1,
+    "warmup_steps": 30,
+    "task_weight_decay": 0.02,
+    "task_warmup_steps": 30,
+    "task_lr_scheduler": "linear_with_warmup",
+
+    "batch_size": 4,
+    "dropout": 0.15,
+    "d_ff": 1500,
+    "activation_fn": "relu",
+    "gradient_accumulation": 2,
+    "metric_average": "micro"
+  }
+}

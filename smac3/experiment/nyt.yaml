@@ -1,0 +1,10 @@
+# @package _global_
+
+smac3:
+  name: "nyt"
+  dataset: "nyt"
+  scenario:
+    min_budget: 1
+    max_budget: 2
+    walltime_limit: 57600  # 17 hours
+    n_trials: 200

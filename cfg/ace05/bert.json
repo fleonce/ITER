@@ -1,0 +1,26 @@
+{
+  "base": "ace05",
+  "dataset": {
+    "features": [2, 3, 8, 13]
+  },
+  "training": {
+    "patience": 10,
+    "max_epochs": 100,
+    "num_epochs": 100,
+    "lr_t5": 9.0558014273489e-06,
+    "lr_iter": 0.0004661953561283595,
+    "lr_scheduler": "linear_with_warmup",
+    "weight_decay": 0.017652803200550828,
+    "warmup_steps": 0.05,
+    "task_weight_decay": 0.05245280885996502,
+    "task_warmup_steps": 0.01,
+    "task_lr_scheduler": "linear_with_warmup",
+
+    "batch_size": 8,
+    "dropout": 0.09696087960622657,
+    "d_ff": 0,
+    "activation_fn": "relu",
+    "gradient_accumulation": 4,
+    "metric_average": "micro"
+  }
+}

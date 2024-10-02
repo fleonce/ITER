@@ -1,0 +1,48 @@
+defaults:
+  - _self_
+  - experiment: null
+
+_convert_: "all"
+seed: 42
+smac3:
+  name: ???
+  transformer: ???
+  dataset: ???
+  scenario:
+    _target_: "smac.scenario.Scenario"
+    _partial_: true
+    n_trials: 25
+    deterministic: true
+    walltime_limit: 0
+    objectives: "ere_f1"
+    min_budget: 1
+    max_budget: 5
+    seed: ${seed}
+  facade:
+    _target_: "smac.facade.HyperparameterOptimizationFacade"
+    _partial_: true
+    overwrite: true
+    logging_level: false  # debug logging
+  cs:
+    _target_: "iter.misc.smac3.configspace_init"
+    seed: ${seed}
+    name: "smac3"
+    conditions: {}
+    hyperparameters:
+      d_ff:
+        _target_: "ConfigSpace.Categorical"
+        name: "d_ff"
+        items: [1500, 150, 0]
+        default: 1500
+      learning_rate:
+        _target_: "ConfigSpace.Float"
+        name: "lr_t5"
+        bounds: [1e-6, 1e-3]
+        default: 5e-5
+        log: true
+      task_learning_rate:
+        _target_: "ConfigSpace.Float"
+        name: "lr_iter"
+        bounds: [2e-6, 1e-3]
+        default: 3e-4
+        log: true
