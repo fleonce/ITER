@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import transformers
 from transformers import PretrainedConfig, AutoConfig, T5Tokenizer, BertTokenizerFast, T5TokenizerFast, BertTokenizer, \
@@ -27,7 +27,7 @@ class ITERConfig(PretrainedConfig, FeaturesMixin):
             num_types=4,
             num_links=5,
             features=0,
-            dataset: str = None,
+            dataset: Optional[str] = None,
             max_nest_depth: int = 1,
             dropout: float = 0.3,
             activation_fn: str = "gelu",
@@ -36,17 +36,18 @@ class ITERConfig(PretrainedConfig, FeaturesMixin):
             use_mlp: bool = True,
             d_ff: int = 0,
             threshold: float = 0.5,
-            entity_types: list[str] = None,
-            link_types: list[str] = None,
+            entity_types: Optional[list[str]] = None,
+            link_types: Optional[list[str]] = None,
             **kwargs
     ):
-        transformer_name = (transformer_config or {}).get("_name_or_path", transformer_name)
         if isinstance(features, list):
             features = sum(2** feat for feat in features)
+        self.features = features
+
+        transformer_name = (transformer_config or {}).get("_name_or_path", transformer_name)
         self.transformer_config = AutoConfig.from_pretrained(transformer_name, **(transformer_config or {}))
         self.num_types = num_types
         self.num_links = num_links
-        self.features = features
         self.dataset = dataset
         self.max_nest_depth = max_nest_depth
         self.dropout = dropout
@@ -68,7 +69,8 @@ class ITERConfig(PretrainedConfig, FeaturesMixin):
             "hidden_size",  # BERT
         )
 
-        super().__init__(
+        PretrainedConfig.__init__(
+            self,
             is_encoder_decoder=False,
             **kwargs
         )
@@ -117,7 +119,7 @@ class ITERConfig(PretrainedConfig, FeaturesMixin):
             return RobertaModel
         elif "t5" in self.transformer_config.model_type:
             if self.is_feature_use_t5_decoder:
-                return AT5Model
+                raise NotImplementedError
             else:
                 return T5EncoderModel
         else:
@@ -135,3 +137,7 @@ class ITERConfig(PretrainedConfig, FeaturesMixin):
     @staticmethod
     def _get_generation_defaults() -> Dict[str, Any]:
         return {}
+
+    def _get_non_default_generation_parameters(self) -> Dict[str, Any]:
+        # hacky workaround as transformers errors out if you have overridden `max_length` as of v44
+        return dict()

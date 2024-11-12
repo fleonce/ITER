@@ -11,6 +11,7 @@ from hydra import initialize_config_dir, compose
 from hydra.utils import instantiate
 from smac import Scenario
 from smac.facade import AbstractFacade
+from sympy.codegen.ast import int64
 
 from iter.datasets import CoNLL
 from iter.datasets.training import Hparams
@@ -40,6 +41,8 @@ def config_to_hparams(
         k: config[k] if k in config else log_default_value(k, v) for k, v in default_hparams.items()
     }
     missing_keys = {k for k in config.keys() if k not in mapped_hparams}
+    if "batch_size" in mapped_hparams:
+        mapped_hparams["batch_size"] = int(mapped_hparams["batch_size"])
     assert not missing_keys, missing_keys
     mapped_hparams = Hparams(**mapped_hparams)
     return mapped_hparams
@@ -107,10 +110,10 @@ def train_fn(
         # randomly select one ade split
         dataset = "ade_split0"
     dataset = CoNLL.from_name(dataset)
-    dataset.setup_hpo_dataset()
+    dataset.setup_hpo()
     metrics = do_train(
         transformer=transformer,
-        dataset=dataset,
+        datasets=[dataset],
         hparams=hparams,
         model_path=model_path.as_posix(),
         log_file=None,
@@ -119,12 +122,13 @@ def train_fn(
         use_bfloat16=overrides.get('use_bfloat16', False),
         num_epochs=0,
         verbose=False,
-        visualize=overrides.get('visualize', False),
         dont_ckpt=overrides.get('dont_ckpt', False),
         do_compile=overrides.get('do_compile', False),
         show_bound_metrics=overrides.get('show_bound_metrics', False),
-        features=None,
     )
+
+    if metrics is None:
+        return {obj: 1 for obj in scenario.objectives}
 
     # smac3 wants to minimize, so invert the metrics, 1 - f1 \leadsto 0 when f1 \leadsto 1
     metrics = ~metrics
@@ -146,7 +150,6 @@ def run_smac(
         smac_overrides: list[str] = None,
         use_bfloat16: bool = False,
         seed: list[int] = 42,
-        visualize: bool = False,
         dont_ckpt: bool = False,
         do_compile: bool = False,
         show_bound_metrics: bool = False,
@@ -164,7 +167,6 @@ def run_smac(
     ))
     cmdline_args = {
         'use_bfloat16': use_bfloat16,
-        'visualize': visualize,
         'dont_ckpt': dont_ckpt,
         'do_compile': do_compile,
         'show_bound_metrics': show_bound_metrics,

@@ -1,5 +1,5 @@
 import sys
-from typing import Sequence, Protocol, TypeVar
+from typing import Sequence, Protocol, TypeVar, Optional
 
 from torch.utils.data import DataLoader, DistributedSampler
 
@@ -85,6 +85,8 @@ class MergingDataloader:
 
 
 class InfiniteDataLoader:
+    iter: Optional[SupportsNext[Batch]]
+
     def __init__(self, inner_dataloader: DataLoader):
         self.inner = inner_dataloader
         self.iter = None
@@ -95,6 +97,8 @@ class InfiniteDataLoader:
 
     def __next__(self):
         try:
+            if self.iter is None:
+                raise ValueError("iter is None")
             return next(self.iter)
         except StopIteration:
             self.iter = iter(self.inner)
@@ -102,11 +106,3 @@ class InfiniteDataLoader:
 
     def __len__(self):
         return sys.maxsize
-
-
-if __name__ == "__main__":
-    dl1 = DataLoader([{"a": i} for i in range(3)])
-    dl2 = DataLoader([{"b": 2 - i} for i in range(3)])
-    merging_dl = MergingDataloader((dl1, dl2))
-    for batch in merging_dl:
-        print(batch)

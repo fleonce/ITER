@@ -6,12 +6,13 @@ from pathlib import Path
 import torch.cuda
 from json import dumps
 
-from iter import ITER
+from iter import ITER, ITERConfig
 from iter.datasets import CoNLL
 from iter.datasets.training import Hparams
-from with_argparse import with_argparse, with_opt_argparse
-from iter.misc.metrics import average_metrics, format_average_metrics, Metrics, average_into_metrics
+from with_argparse import with_opt_argparse
+from iter.misc.metrics import format_average_metrics, Metrics, average_into_metrics
 from iter.misc.training import evaluate_model
+from iter.modeling_iter2 import ITERForRelationExtraction
 
 
 @with_opt_argparse(aliases={
@@ -31,7 +32,9 @@ def evaluate(
     if model_or_experiment.is_dir() and (
         (model_or_experiment / "model.safetensors").exists() or (model_or_experiment / "model.safetensors.index.json").exists()
     ):
-        model = ITER.from_pretrained(model_or_experiment)
+        config = ITERConfig.from_pretrained(model_or_experiment)
+        model_cls = ITER if config.is_feature_ner_only else ITERForRelationExtraction
+        model = model_cls.from_pretrained(model_or_experiment)
         metrics, _ = perform_evaluate(model, dataset, split, n_times, batch_size, threshold, features)
         if jsonify:
             print(dumps(metrics.to_dict(), indent=2))
@@ -56,7 +59,9 @@ def evaluate(
         for model_type, models in model_paths.items():
             print(f"Testing model type {model_type} ({len(models)}) models ...")
             for model_name in models:
-                model = ITER.from_pretrained(model_name)
+                config = ITERConfig.from_pretrained(model_name)
+                model_cls = ITER if config.is_feature_ner_only else ITERForRelationExtraction
+                model = model_cls.from_pretrained(model_name)
                 model_configs[model_type] = model.config
                 metrics, bound_metrics = perform_evaluate(model, dataset, split, n_times, batch_size, threshold, features)
                 model_metrics[model_type].append(metrics)
@@ -86,7 +91,10 @@ def evaluate(
     else:
         print(f"No model or experiment specified in '{model_or_experiment.as_posix()}'")
         print(f"Trying to load '{model_or_experiment}' ...")
-        model = ITER.from_pretrained(model_or_experiment)
+
+        config = ITERConfig.from_pretrained(model_or_experiment)
+        model_cls = ITER if config.is_feature_ner_only else ITERForRelationExtraction
+        model = model_cls.from_pretrained(model_or_experiment)
         metrics, _ = perform_evaluate(model, dataset, split, n_times, batch_size, threshold, features)
         if jsonify:
             print(dumps(metrics.to_dict(), indent=2))
@@ -108,15 +116,30 @@ def perform_evaluate(
     tokenizer = model.tokenizer
 
     dataset = dataset or model.config.dataset
+    hparams = Hparams.from_name(dataset, eval_batch_size=batch_size)
     dataset = CoNLL.from_name(dataset, tokenizer=tokenizer)
     if features:
         warnings.warn("Changing the model features will possibly break functionality, be aware")
         model.features = model.config.features = dataset.features = sum(2 ** bit for bit in features)
     dataset.setup_dataset()
+    if not model.config.entity_types:
+        model.config.entity_types = dataset.entity_types
+    if not model.config.link_types:
+        model.config.link_types = dataset.link_types
 
+    numel = sum(param.numel() for param in model.parameters())
+    no_grad_numel = sum(param.numel() for param in model.parameters() if not param.requires_grad)
+    print(str(numel / 1e6) + f" M params ({numel} total)")
+    if no_grad_numel > 0:
+        print(str((numel - no_grad_numel) / 1e6) + " M activated params")
     metrics, bound_metrics = None, None
     for _ in range(n_times):
-        metrics, bound_metrics = evaluate_model(model, dataset, split, batch_size)
+        metrics, bound_metrics = evaluate_model(
+            model,
+            [dataset],
+            hparams,
+            split,
+        )
         print(metrics)
         print(bound_metrics)
     return metrics, bound_metrics

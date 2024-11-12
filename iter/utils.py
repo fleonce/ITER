@@ -1,7 +1,34 @@
 from collections import OrderedDict
+from typing import TypeVar, Callable, overload
 
+_T = TypeVar("_T")
+
+def _named_tuple_getitem(self, item):
+    return getattr(self, item)
+
+def _named_tuple_setitem(self, item, value):
+    setattr(self, item, value)
+
+@overload
+def namedtuple(cls: type[_T], /) -> type[_T]: ...
+
+@overload
+def namedtuple(cls: None = None, /) -> Callable[[type[_T]], type[_T]]: ...
+
+def namedtuple(cls=None):
+    def wrap(cls):
+        setattr(cls, "__getitem__", _named_tuple_getitem)
+        setattr(cls, "__setitem__", _named_tuple_setitem)
+        return cls
+
+    if cls is None:
+        return wrap
+
+    return wrap(cls)
 
 class NamedTuple2:
+    _annotations: OrderedDict[int, str]
+
     def __new__(cls, *args, **kwargs):
         self = super().__new__(cls)
         inverse_cls_order = list()
@@ -22,7 +49,7 @@ class NamedTuple2:
         return self
 
     def __getitem__(self, item):
-        if item >= len(self):
+        if isinstance(item, int) and item >= len(self):
             raise IndexError
         return getattr(self, self._annotations[item])
 

@@ -1,0 +1,19 @@
+{
+  "base": "genia",
+  "training": {
+    "patience": 10,
+    "max_epochs": 100,
+    "num_epochs": 100,
+    "lr_t5": 0.0002646336296533128,
+    "lr_iter": 0.000813924669584964,
+    "lr_scheduler": "linear_with_warmup",
+    "weight_decay": 0.045813882726004285,
+    "warmup_steps": 0.1,
+    "task_weight_decay": 0.05670376931643333,
+    "task_warmup_steps": 0.2,
+    "task_lr_scheduler": "linear_with_warmup",
+    "activation_fn": "relu",
+    "dropout": 0.3,
+    "batch_size": 16
+  }
+}

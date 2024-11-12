@@ -39,7 +39,7 @@ smac3:
       batch_size:
         _target_: "ConfigSpace.Categorical"
         name: "batch_size"
-        items: [8, 16, 32, 64]
+        items: [8, 16, 32]
         default: 8
       learning_rate:
         _target_: "ConfigSpace.Float"
@@ -58,10 +58,15 @@ smac3:
         name: "activation_fn"
         items: ["gelu", "relu", "tanh"]
         default: "gelu"
+      dropout:
+        _target_: "ConfigSpace.Float"
+        name: "dropout"
+        bounds: [0.05, 0.3]
+        default: 0.1
       weight_decay:
         _target_: "ConfigSpace.Float"
         name: "weight_decay"
-        bounds: [0.0, 0.1]
+        bounds: [ 0.0, 0.1 ]
         default: 0.02
       task_weight_decay:
         _target_: "ConfigSpace.Float"

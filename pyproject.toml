@@ -3,8 +3,8 @@ name = "iter"
 description = "Implementation for our paper ITER: Iterative Transformer-based Entity Recognition and Relation Extraction"
 version = "1.0.0"
 dependencies = [
-    "torchcheck>=1.0.6",
-    "safetensors_dataset>=0.0.4",
+    "torchcheck==1.0.7",
+    "safetensors_dataset>=0.0.5",
     "with_argparse>=0.0.7rc1",
     "gdown>=5.0.0",
     "torch>=2.1.2",
@@ -18,7 +18,7 @@ dependencies = [
 requires-python = ">= 3.10"
 
 [project.urls]
-# repository = "https://github.com"
+repository = "https://github.com/fleonce/iter"
 
 [project.optional-dependencies]
 visuals = [

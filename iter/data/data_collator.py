@@ -1,4 +1,4 @@
-from typing import Iterable, TypeVar, Optional, Callable
+from typing import Iterable, TypeVar, Optional, Callable, cast
 from typing_extensions import Self
 
 import torch
@@ -9,19 +9,17 @@ from transformers import PreTrainedTokenizerBase
 _T = TypeVar('_T')
 _C = TypeVar('_C')
 
-_marker = object()
-
 
 def first(
     iterable: Iterable[_T],
     func: Callable[[_T], _C],
-    default: Optional[_C] = _marker
+    default: Optional[_C] = None
 ) -> _C:
     try:
         value = next(iter(iterable))
         return func(value)
     except StopIteration:
-        if default is _marker:
+        if default is None:
             raise
         return default
 
@@ -71,6 +69,7 @@ class DataCollatorForITER:
     def pad_pair_flag(self, k: str, seq_len: int, num_l: int, num_r: int, tensors: list[Tensor]):
         bs = len(tensors)
         num_targets = first(tensors, lambda t: t.size(-1))
+        dims: tuple[int, ...]
         dims = (bs, seq_len, num_l, num_targets)
         if k == "rr_pair_flag":
             dims = (bs, seq_len, num_r, num_targets)
@@ -92,8 +91,8 @@ class DataCollatorForITER:
                 batch[k] = self.pad_sequence_with_key(k, tensors)
         seq_len = batch["input_ids"].size(1)
         actions = batch["actions"]
-        num_l = (actions & (1 << 0)).ne(0).sum(dim=-1).max()  # calc num_l from actions + input_actions
-        num_r = (actions & (1 << 1)).ne(0).sum(dim=-1).max()
+        num_l = int((actions & (1 << 0)).ne(0).sum(dim=-1).max())  # calc num_l from actions + input_actions
+        num_r = int((actions & (1 << 1)).ne(0).sum(dim=-1).max())
         for k in keys & {'lr_pair_flag', 'rr_pair_flag'}:
             tensors = [inp[i][k] for i in range(bs)]
             batch[k] = self.pad_pair_flag(k, seq_len, num_l, num_r, tensors)

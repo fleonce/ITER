@@ -1,12 +1,11 @@
 import dataclasses
-import os
 import warnings
 from typing import Optional
 
 import torch
 import torch.nn.functional as F
-from torch import nn, logsumexp, Tensor
-from torch.nn import Module, Linear, LayerNorm, Dropout, Embedding
+from torch import logsumexp, Tensor
+from torch.nn import Module, Linear, LayerNorm, Dropout
 from iter.misc.func import batched_index_gen
 from transformers import T5EncoderModel, T5TokenizerFast, PreTrainedModel
 from transformers.activations import ACT2FN
@@ -14,7 +13,6 @@ from transformers.modeling_outputs import BaseModelOutput
 
 from .configuration_iter import ITERConfig
 from .modeling_features import FeaturesMixin
-from .modeling_t5 import AT5Model
 
 NEG_INF = -20000
 

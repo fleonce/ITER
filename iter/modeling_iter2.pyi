@@ -134,7 +134,7 @@ class ITERForRelationExtraction(ITER):
         attention_mask: Tensor,
         actions: Tensor,
         lr_pair_flag: Tensor,
-        rr_pair_flag: Tensor = None,
+        rr_pair_flag: Optional[Tensor] = None,
     ) -> ITEROutput: ...
 
     def resize_num_links(self, new_num_links: int): ...

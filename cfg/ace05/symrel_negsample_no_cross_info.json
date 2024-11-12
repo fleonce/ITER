@@ -1,0 +1,9 @@
+{
+  "base": "ace05",
+  "dataset": {
+    "features": [2, 13, 16, 18]
+  },
+  "training": {
+    "d_ff": 4096
+  }
+}

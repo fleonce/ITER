@@ -3,19 +3,22 @@ import contextlib
 import json
 import logging
 import os
+import platform
 import socket
+import subprocess
 import sys
 import time
 from collections import defaultdict
 from datetime import datetime
 from logging import Logger
 from pathlib import Path
-from typing import Optional, TypeVar, Sequence, cast
+from typing import Optional, TypeVar, Sequence, cast, MutableMapping, Any, ContextManager
 
 import torch.cuda
 import torch.distributed as dist
+from torch.nn import Module
+from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
-from torch.utils.data import DataLoader, DistributedSampler
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP, StateDictType, FullStateDictConfig
 from tqdm import tqdm
 from with_argparse import with_argparse
@@ -26,7 +29,7 @@ from iter.datasets.training import Hparams
 from iter.misc.metrics import Metrics, average_metrics
 from iter.misc.seeding import setup_seed
 from iter.misc.util import get_commit_hash, is_clean_working_tree, get_working_tree_diff
-from iter.misc.training import evaluate_model, fsdp_model_init, EvaluateProtocol
+from iter.misc.training import evaluate_model, fsdp_model_init, EvaluateProtocol, ModelInitProtocol
 from iter import ITERForRelationExtraction
 from iter.optimizing_iter import get_grouped_parameters, get_scheduler_lambda
 from iter.tools.dataloaders import create_primary_dataloader, DataLoaderProtocol
@@ -39,10 +42,10 @@ T = TypeVar('T', bound=ITER)
 def main(
     transformer: str,
     dataset: str,
-    model_path: str = None,
-    log_file: Path = None,
+    model_path: Optional[str] = None,
+    log_file: Optional[Path] = None,
     log_append: bool = False,
-    seed: list[int] = 42,
+    seed: Optional[list[int]] = None,
     use_tqdm: bool = True,
     use_bfloat16: bool = False,
     use_fsdp: bool = False,
@@ -51,8 +54,8 @@ def main(
     dont_ckpt: bool = False,
     do_compile: bool = False,
     show_bound_metrics: bool = False,
-    load_ckpt: Path = None,
-    features: list[int] = None,
+    load_ckpt: Optional[Path] = None,
+    features: Optional[list[int]] = None,
 ):
     hparams = Hparams.from_name(dataset)
     conll_dataset = CoNLL.from_name(dataset)
@@ -63,16 +66,18 @@ def main(
     if conll_dataset.is_feature_ner_only and hparams.optimize_for != "ner":
         hparams.optimize_for = "ner"
 
+    train_seed = seed or 42
     if isinstance(seed, list) and len(seed) == 1:
-        seed = seed[0]
-    train_kwargs = dict(
+        train_seed = seed[0]
+
+    result = do_train(
         transformer=transformer,
         datasets=[conll_dataset],
         hparams=hparams,
         model_path=model_path,
         log_file=log_file,
         log_append=log_append,
-        seed=seed,
+        seed=train_seed,
         use_tqdm=use_tqdm,
         use_bfloat16=use_bfloat16,
         use_fsdp=use_fsdp,
@@ -83,8 +88,6 @@ def main(
         show_bound_metrics=show_bound_metrics,
         load_ckpt=load_ckpt,
     )
-
-    result = do_train(**train_kwargs)
     if result and isinstance(seed, list):
         formatted_avg_metrics = {k: f"{mean:.6f} ± {std:.3f}" for k, (mean, std) in result.to_dict().items()}
         print(json.dumps(formatted_avg_metrics, indent=2, ensure_ascii=False))
@@ -146,9 +149,10 @@ def setup_model_path(
 def setup_logging(
     name: str,
     model_path: str,
-    log_file: Path,
+    log_file: Optional[Path],
     log_append: bool = False,
 ):
+    log_handlers: list[logging.StreamHandler]
     log_handlers = [logging.StreamHandler(sys.stdout)]
     if not log_file:
         log_file = Path(f"{model_path}/train.log")
@@ -172,7 +176,15 @@ def reproducibility_logging(
     use_bfloat16: bool,
     use_fsdp: bool = False,
 ):
-    logger.info(f"Torch Version = {torch.__version__} (CUDA {torch.version.cuda}) with bfloat16 = {use_bfloat16}")
+    logger.info(
+        f"Python Version = {sys.version} "
+        f"on {platform.system()} {platform.version()} ({platform.platform()})"
+    )
+    logger.info(
+        f"Torch Version = {torch.__version__} "
+        f"(CUDA {torch.version.cuda}) with bfloat16 = {use_bfloat16} "
+        f"(Git commit = {torch.version.git_version})"
+    )
     if is_clean_working_tree():
         logger.info(f"Git commit = {get_commit_hash()} on {socket.gethostname()} (tree is clean)")
     else:
@@ -203,6 +215,37 @@ def train_logging(
     model.list_features(logger)
 
 
+def setup_precision_context(
+    use_bfloat16: bool,
+    use_fsdp: bool,
+) -> ContextManager:
+    if use_bfloat16 and not use_fsdp:
+        return torch.cuda.amp.autocast(
+            enabled=True, dtype=torch.bfloat16
+        )
+    return contextlib.nullcontext()
+
+
+def write_reproducibility_checkpoint(
+    model_path: str,
+    model: Module,
+    optimizer: Optimizer,
+    hparams: Hparams,
+    num_epochs: int
+):
+    repro_dict = {
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "hparams": hparams,
+        "num_epochs": num_epochs
+    }
+
+    with open(f"{model_path}/requirements.txt", "w") as f:
+        subprocess.run("python -m pip freeze".split(), stdout=f)
+
+    torch.save(repro_dict, f"{model_path}/repro.pt")
+
+
 def load_checkpoint(
     model: T,
     model_class: type[T],
@@ -224,29 +267,32 @@ def load_checkpoint(
 def do_train(
     seed: list[int] | int,
     **train_kwargs,
-) -> Metrics:
+) -> Optional[Metrics]:
     if isinstance(seed, list):
         seeds = seed
         metrics = []
         for seed in seeds:
             seed_kwargs = dict(train_kwargs, seed=seed)
             seed_metrics = do_train_impl(**seed_kwargs)
-            metrics.append(seed_metrics)
+            if seed_metrics:
+                metrics.append(seed_metrics)
         avg_metrics = average_metrics(metrics)
-        avg_metrics = {k: mean for k, (mean, std) in avg_metrics.items()}
-        return Metrics.from_dict(avg_metrics)
+        mean_metrics = {k: mean for k, (mean, std) in avg_metrics.items()}
+        return Metrics.from_dict(mean_metrics)
     else:
         return do_train_impl(**train_kwargs, seed=seed)
 
 
 def do_train_impl(
+    *,
     transformer: str,
     datasets: Sequence[ITERDataset],
+    hparams: Hparams,
     model_class: Optional[type[T]] = None,
+    model_init: Optional[ModelInitProtocol] = None,
     config_class: Optional[type[C]] = None,
-    hparams: Hparams = None,
-    model_path: str = None,
-    log_file: Path = None,
+    model_path: Optional[str] = None,
+    log_file: Optional[Path] = None,
     log_append: bool = False,
     seed: int = 42,
     use_tqdm: bool = True,
@@ -257,7 +303,7 @@ def do_train_impl(
     dont_ckpt: bool = False,
     do_compile: bool = False,
     show_bound_metrics: bool = False,
-    load_ckpt: Path = None,
+    load_ckpt: Optional[Path] = None,
     evaluate_fn: EvaluateProtocol = evaluate_model,
     dataloader_fn: DataLoaderProtocol = create_primary_dataloader
 ) -> Optional[Metrics]:
@@ -315,17 +361,20 @@ def do_train_impl(
 
     if model_class is None:
         model_class = ITER if config.is_feature_ner_only else ITERForRelationExtraction
+    if model_init is None:
+        model_init = model_class
 
     if use_fsdp:
         assert load_ckpt is None, f"Loading a checkpoint in FSDP is currently not supported"
         model, rank, world_size = fsdp_model_init(
             config,
-            model_init_fn=model_class,
+            model_init_fn=model_init,
+            model_init_kwargs=dict(),
             use_bfloat16=use_bfloat16,
             use_hsdp=False,
             use_activation_checkpointing=True,
         )
-        device = rank
+        device = f"cuda:{rank}"
     else:
         model = model_class(config)  # ITER(config)
         if load_ckpt:
@@ -356,8 +405,10 @@ def do_train_impl(
         if verbose:
             ds.list_splits(logger)
 
-    compute_loss_context_mngr = torch.cuda.amp.autocast(
-        enabled=True, dtype=torch.bfloat16) if use_bfloat16 and not use_fsdp else contextlib.nullcontext()
+    compute_loss_context_mngr = setup_precision_context(
+        use_bfloat16,
+        use_fsdp,
+    )
     # calculate total train steps ahead of time
     num_samples_per_epoch = len(primary_dataset["train"])
     effective_batch_size = hparams.batch_size * hparams.gradient_accumulation
@@ -367,6 +418,14 @@ def do_train_impl(
     lr_scheduler = get_scheduler_lambda(hparams.lr_scheduler, hparams.warmup_steps, num_steps)
     task_lr_scheduler = get_scheduler_lambda(hparams.task_lr_scheduler, hparams.task_warmup_steps, num_steps)
     lr_scheduler = LambdaLR(optimizer, [lr_scheduler, lr_scheduler, task_lr_scheduler, task_lr_scheduler])
+
+    write_reproducibility_checkpoint(
+        model_path=model_path,
+        model=model,
+        optimizer=optimizer,
+        hparams=hparams,
+        num_epochs=num_epochs
+    )
 
     if not use_fsdp:
         model = model.to(device)
@@ -400,6 +459,7 @@ def do_train_impl(
 
         stats = torch.zeros(3, device=device)
         steps, grad_steps = 0, 0
+        postfix: MutableMapping[str, Any]
         postfix = collections.OrderedDict()
         for batch in (
             tq := tqdm(
@@ -460,6 +520,8 @@ def do_train_impl(
                 logger.info(repr(val_metrics) + " " + repr(val_metrics_no_tag))
             else:
                 logger.info(val_metrics)
+                torch.set_printoptions(sci_mode=False)
+                logger.info("Action confusion: \n" + str(val_metrics.measurements[0]))
         outcome_f1 = (val_metrics.ere_f1 if hparams.optimize_for == "ere" else val_metrics.ner_f1) \
             if hparams.metric_average == "micro" \
             else (val_metrics.macro_ere_f1 if hparams.optimize_for == "ere" else val_metrics.macro_ner_f1)
@@ -486,7 +548,8 @@ def do_train_impl(
 
     if best_f1_epoch is None and not dont_ckpt:
         logger.info(f"Model did not train, aborting ...")
-        dist.barrier()
+        if use_fsdp:
+            dist.barrier()
         return None
 
     if use_fsdp:
@@ -499,7 +562,7 @@ def do_train_impl(
         if use_fsdp:
             model, _, _ = fsdp_model_init(
                 config,
-                model_init_fn=model_class.from_pretrained,
+                model_init_fn=cast(ModelInitProtocol, model_class.from_pretrained),
                 model_init_kwargs={"pretrained_model_name_or_path": model_path},
                 use_bfloat16=use_bfloat16,
                 use_hsdp=False,

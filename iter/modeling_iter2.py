@@ -100,7 +100,8 @@ class IsSpan(FFN):
 
 class IsLink(FFN):
     def __init__(self, config: ITERConfig):
-        super().__init__(config, in_channels=2, out_channels="num_links")
+        num_links = config.num_links * (1 + config.is_feature_negsample_link_types)
+        super().__init__(config, in_channels=2, out_channels=num_links)
 
 
 @dataclass
@@ -317,7 +318,7 @@ class ITER(PreTrainedModel, FeaturesMixin):
 
         is_left = torch.gt(logits, 0) & attention_mask
         # [B, num_l]
-        num_left = is_left.sum(dim=1).amax().clamp_min(1)
+        num_left = is_left.sum(dim=1).amax().clamp_min(self.max_nest_depth)
         is_left_positions = x.new_empty((batch_size, num_left), dtype=torch.long)
         is_left_positions, is_left_mask = batched_index_padded(is_left, 0, out=is_left_positions, return_mask=True)
 
@@ -393,7 +394,7 @@ class ITER(PreTrainedModel, FeaturesMixin):
             # [B, N, nest_depth]
             denominator = denominator.any(dim=3)
             # [B, N]
-            is_right = denominator.any(dim=3)
+            is_right = denominator.any(dim=2)
         else:
             # [B, N]
             denominator = logits.logsumexp(dim=2, keepdim=False)
@@ -497,7 +498,7 @@ class ITER(PreTrainedModel, FeaturesMixin):
         closest_left_weights: Tensor
         closest_left_indices: Tensor
         closest_left_weights, closest_left_indices = torch.where(
-            distance_to_previous_left >= 0,
+            (distance_to_previous_left >= 0) & is_after_or_at_left,
             distance_to_previous_left,
             torch.iinfo(distance_to_previous_left.dtype).max
         ).topk(nest_depth, dim=2, largest=False)
@@ -550,6 +551,9 @@ class ITER(PreTrainedModel, FeaturesMixin):
                 logits + (~closest_left_lr_pair_flag * NEG_INF),
                 dim=3
             ) * mask
+
+            denominator = denominator.unsqueeze(3)
+            numerator = numerator.unsqueeze(3)
         else:
             denominator = torch.logsumexp(
                 logits,
@@ -560,12 +564,11 @@ class ITER(PreTrainedModel, FeaturesMixin):
                 dim=(2, 3)
             ).unsqueeze(2) * mask
 
-
         no_action = torch.zeros_like(denominator)
         denominator = torch.logsumexp(
             torch.cat((no_action, denominator), dim=2 + nested_training),
             dim=2 + nested_training
-        ) * attention_mask
+        )
 
         numerator = torch.logsumexp(
             torch.cat((
@@ -577,8 +580,12 @@ class ITER(PreTrainedModel, FeaturesMixin):
                 numerator
             ), dim=2 + nested_training),
             dim=2 + nested_training
-        ) * attention_mask
-        return denominator.sub(numerator).mul(attention_mask).sum()
+        )
+        sub_mask = attention_mask
+        if nested_training:
+            sub_mask = attention_mask.unsqueeze(2)
+
+        return denominator.sub(numerator).mul(sub_mask).sum()
 
     def _merge_representations(self, head: Tensor, tail: Tensor):
         if self.is_feature_sum_representations:

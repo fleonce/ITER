@@ -16,6 +16,9 @@ def _decode_pairings_to_entities(
     *,
     use_left=True
 ):
+    if names is None:
+        raise ValueError("names cannot be None")
+
     pairings_per_element: list[list[tuple]] = [list() for _ in range(pairings.size(0))]
     if self.is_feature_extra_lr_class:
         pairings = pairings[..., :-1]
@@ -57,6 +60,9 @@ def decode_actions_and_pairings(
     entity_types: list[str],
     link_types: list[str],
 ):
+    if entity_types is None:
+        raise ValueError("entity_types cannot be None")
+
     if self.is_feature_nest_depth_gt_1 and self.is_feature_extra_lr_class:
         return nested_decode_actions_and_pairings(
             self,
@@ -120,7 +126,7 @@ def nested_decode_actions_and_pairings(
     input_ids: Tensor,
     actions: Tensor,
     pairings: Tensor,
-    links: Tensor,
+    links: Optional[Tensor],
     link_probabilities: Optional[Tensor],
     lr_typing_names: list[str],
     rr_typing_names: list[str],
@@ -137,6 +143,9 @@ def nested_decode_actions_and_pairings(
 
     if self.is_feature_ner_only:
         return pairings_per_element, links_per_element
+
+    if links is None:
+        raise ValueError("links is None")
 
     l_indices = batched_index_padded(actions.bitwise_and(0b01).ne(0))
     r_indices = batched_index_padded(actions.bitwise_and(0b10).ne(0))
