@@ -8,6 +8,9 @@ datasets
 models
 smac3/logs
 
+!scripts/datasets
+!scripts/models
+
 # Project specific files
 *.zip
 cfg/ade_split*.json
