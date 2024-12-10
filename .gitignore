@@ -10,6 +10,7 @@ smac3/logs
 
 !scripts/datasets
 !scripts/models
+!iter/datasets
 
 # Project specific files
 *.zip
