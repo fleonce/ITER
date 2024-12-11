@@ -752,6 +752,15 @@ class ITERForRelationExtraction(ITER):
         rr_pair_flag = x.new_zeros(dims, dtype=torch.bool)
         rr_pair_probabilities = x.new_zeros(dims)
 
+        if num_right <= 0:
+            return ITERGenerateOutput(
+                base_output.actions,
+                base_output.lr_pair_flag,
+                None,
+                rr_pair_flag,
+                rr_pair_probabilities
+            )
+
         # [B, num_r, dim]
         is_right_hidden = torch.gather(
             x,
