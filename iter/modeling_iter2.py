@@ -804,7 +804,7 @@ class ITERForRelationExtraction(ITER):
                 if is_mask:
                     unsqueeze = unsqueeze + ((4,) if is_inner else (2,))
                     expands = expands + ((4, self.max_nest_depth) if is_inner else (2, self.max_nest_depth))
-                return unsqueeze_and_expand_dims(inp, unsqueeze, *expands)
+                return unsqueeze_and_expand_dims(inp, unsqueeze, expands)
             # [B, num_right, nest_depth, num_right, nest_depth, dim]
             inner = proj(is_right_hidden, True, False)
             outer = proj(is_right_hidden, False, False)
