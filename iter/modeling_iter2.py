@@ -768,6 +768,7 @@ class ITERForRelationExtraction(ITER):
             index=expand_dim(is_right_positions.unsqueeze(2), 2, dim),
         )
 
+        closest_left_mask = None
         if nested_inference:
             # [B, num_right, nest_depth, dim]
             is_right_hidden = expand_dim(
@@ -782,6 +783,19 @@ class ITERForRelationExtraction(ITER):
                 index=unsqueeze_dims(is_right_positions, 2, 3).expand(-1, -1, self.max_nest_depth, dim)
             )
             is_right_hidden = is_right_hidden + closest_left_hidden_at_right_positions
+
+
+            # [B, num_right, nest_depth]
+            closest_left_mask = torch.gather(
+                # [B, seq_len, nest_depth]
+                base_output.cache.closest_left_mask,
+                dim=1,
+                index=unsqueeze_and_expand_dims(
+                    is_right_positions,
+                    2,
+                    (2, self.max_nest_depth)
+                )
+            )
         pass
 
         if not nested_inference:
@@ -799,18 +813,26 @@ class ITERForRelationExtraction(ITER):
             outer_mask = proj(is_right_mask, 2)
         else:
             def proj(inp: Tensor, is_inner: bool = False, is_mask: bool = False):
-                unsqueeze = (1, 2) if is_inner else (3, 4)
-                expands = ((1, num_right), (2, self.max_nest_depth)) if is_inner else (3, num_right, 4, self.max_nest_depth)
-                if is_mask:
-                    unsqueeze = unsqueeze + ((4,) if is_inner else (2,))
-                    expands = expands + ((4, self.max_nest_depth) if is_inner else (2, self.max_nest_depth))
-                return unsqueeze_and_expand_dims(inp, unsqueeze, expands)
+                if is_inner:
+                    return unsqueeze_and_expand_dims(
+                        inp,
+                        (1, 2),
+                        (1, num_right), (2, self.max_nest_depth),
+                    )
+                else:
+                    return unsqueeze_and_expand_dims(
+                        inp,
+                        (3, 4),
+                        (3, num_right), (4, self.max_nest_depth),
+                    )
             # [B, num_right, nest_depth, num_right, nest_depth, dim]
             inner = proj(is_right_hidden, True, False)
             outer = proj(is_right_hidden, False, False)
             # [B, num_right, nest_depth, num_right, nest_depth]
-            inner_mask = proj(is_right_mask, True, True)
-            outer_mask = proj(is_right_mask, False, True)
+            inner_outer_mask = unsqueeze_dims(is_right_mask, 2) * closest_left_mask
+
+            inner_mask = proj(inner_outer_mask, True, True)
+            outer_mask = proj(inner_outer_mask, False, True)
 
         compare_mask = inner_mask & outer_mask
         compare = self._merge_link_representations(inner, outer)

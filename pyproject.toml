@@ -1,7 +1,7 @@
 [project]
 name = "iter"
 description = "Implementation for our paper ITER: Iterative Transformer-based Entity Recognition and Relation Extraction"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
     "torchcheck==1.0.7",
     "safetensors_dataset>=0.0.5",

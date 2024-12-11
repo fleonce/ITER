@@ -9,13 +9,13 @@ from json import dumps
 from iter import ITER, ITERConfig
 from iter.datasets import CoNLL
 from iter.datasets.training import Hparams
-from with_argparse import with_opt_argparse
+from with_argparse import with_argparse
 from iter.misc.metrics import format_average_metrics, Metrics, average_into_metrics
 from iter.misc.training import evaluate_model
 from iter.modeling_iter2 import ITERForRelationExtraction
 
 
-@with_opt_argparse(aliases={
+@with_argparse(aliases={
     "model_or_experiment": ["-m", "--model", "--experiment"]
 })
 def evaluate(

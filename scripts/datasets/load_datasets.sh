@@ -7,6 +7,7 @@ DATASET_DIR="$WORK_DIR/datasets"
 
 # conll03
 function load_conll03 () {
+  mkdir "$DATASET_DIR/conll03"
   test -f "$DATASET_DIR/conll03.zip" || wget https://polybox.ethz.ch/index.php/s/bFf8vJBonIT7sr8/download -O "$DATASET_DIR/conll03.zip"
   unzip -oq "$DATASET_DIR/conll03.zip" -d "$DATASET_DIR"
   mv "$DATASET_DIR/conll03_ner/"* "$DATASET_DIR/conll03"
