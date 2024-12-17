@@ -681,6 +681,7 @@ class ITERForRelationExtraction(ITER):
         bs, seq_len, dim = x.shape
         attention_mask = actions.bitwise_and(4).eq(0)
         is_right = actions.bitwise_and(2).ne(0)
+        is_left = actions.bitwise_and(1).ne(0)
 
         is_right_positions, is_right_mask = batched_index_padded(is_right, 0, return_mask=True)
         if is_right_positions.size(1) == 0:
@@ -698,29 +699,139 @@ class ITERForRelationExtraction(ITER):
 
         if nested_training:
             assert self.is_feature_extra_lr_class
-            raise NotImplementedError
+
+            is_left_positions, is_left_mask = batched_index_padded(is_left, 0, return_mask=True)
+
+            distance_to_previous_left = inclusive_cumsum(attention_mask.long(), 1).unsqueeze(2) - is_left_positions.unsqueeze(1)
+            distance_to_previous_left.masked_fill_(~is_left_mask.unsqueeze(1), -1)
+
+            is_after_or_at_left = distance_to_previous_left >= 0
+            is_after_or_at_left = is_after_or_at_left & attention_mask.unsqueeze(2) & is_left_mask.unsqueeze(1)
+
+            nest_depth = min(self.max_nest_depth, is_left_positions.size(1))
+            if nest_depth == 0:
+                return x.new_zeros(tuple())
+            num_right = is_right_positions.size(1)
+            num_left = is_left_positions.size(1)
+
+            # [B, N, nest_depth]
+            closest_left_weights: Tensor
+            closest_left_indices: Tensor
+            closest_left_weights, closest_left_indices = torch.where(
+                (distance_to_previous_left >= 0) & is_after_or_at_left,
+                distance_to_previous_left,
+                distance_to_previous_left + (torch.iinfo(distance_to_previous_left.dtype).max >> 4)
+            ).topk(nest_depth, dim=2, largest=False)
+            closest_left_mask = closest_left_weights < seq_len
+
+            # [B, N, nest_depth]
+            closest_left_positions = torch.gather(
+                expand_dim(is_left_positions.unsqueeze(1), 1, seq_len),
+                dim=2,
+                index=closest_left_indices
+            )
+
+            x = expand_dim(x.unsqueeze(2), 2, nest_depth)
+            # prepare closest_left_positions such that we can gather from x in dim=1
+            # [B, N, nest_depth, H]
+            closest_left_hidden = torch.gather(
+                x,
+                dim=1,
+                index=expand_dim(closest_left_positions.unsqueeze(3), 3, dim).clamp_min(0)
+            )
+
+            # [B, N, nest_depth, H]
+            # for 0 <= n <= N: out[n] = x[n] + x[closest_left[x]]
+            closest_span_hidden = torch.add(x, closest_left_hidden)
+
+            # [B, num_right, nest_depth]
+            is_right_closest_left_mask = torch.gather(
+                closest_left_mask,
+                dim=1,
+                index=unsqueeze_and_expand_dims(is_right_positions, 2, (2, nest_depth))
+            )
+            is_right_closest_left_indices = torch.gather(
+                closest_left_indices,
+                dim=1,
+                index=unsqueeze_and_expand_dims(is_right_positions, 2, (2, nest_depth))
+            )
+            # [B, num_right, nest_depth, H]
+            is_right_closest_left_hidden = torch.gather(
+                closest_span_hidden,
+                dim=1,
+                index=unsqueeze_and_expand_dims(
+                    is_right_positions,
+                    (2, 3),
+                    (2, nest_depth), (3, dim),
+                )
+            )
+
+            if rr_pair_flag.size(3) == 0:
+                return x.new_zeros(tuple())
+            # rr_pair_flag has dim [B, N, num_left, num_right, num_left, T]
+            # dim0 = B
+            # dim2 = num_left (sequence)
+            # dim4 = num_left (span)
+            # [B, N, nest_depth, num_right, num_left, T]
+            num_left_to_nest_depth_index = unsqueeze_and_expand_dims(
+                # [B, N, nest_depth] -> [B, N, nest_depth, num_right, num_left, T]
+                closest_left_indices,
+                (3, 4, 5),
+                (3, num_right), (4, num_left), (5, self.num_types),
+            )
+            rr_pair_flag = torch.gather(
+                rr_pair_flag,
+                dim=2,
+                index=num_left_to_nest_depth_index
+            )
+            # [B, N, nest_depth, num_right, nest_depth, T]
+            # here is the problem
+            rr_pair_flag = torch.gather(
+                rr_pair_flag,
+                dim=4,
+                index=unsqueeze_and_expand_dims(
+                    is_right_closest_left_indices,
+                    (1, 2, 5),
+                    (1, seq_len), (2, nest_depth), (5, self.num_types)
+                )
+            )
+
+            # [B, N, nest_depth, num_right, nest_depth, 2*dim]
+            logits = self._merge_link_representations(
+                unsqueeze_and_expand_dims(is_right_closest_left_hidden, (1, 2,), (1, seq_len), (2, nest_depth)),
+                unsqueeze_and_expand_dims(closest_span_hidden, (3, 4), (3, num_right), (4, nest_depth))
+            )
+            # [B, N, nest_depth, num_right, nest_depth, T]
+            logits = self.rr_score(logits)
+            # [B, N, is_right]
+            logits_mask = is_right_mask.unsqueeze(1) & attention_mask.unsqueeze(2)
+            # closest_left_mask: [B, N, nest_depth]
+            # is_right_closest_left_mask: [B, num_right, nest_depth]
+            logits_mask = unsqueeze_dims(logits_mask, 2, 4)
+            logits_mask = logits_mask & unsqueeze_dims(closest_left_mask, 3, 4) & unsqueeze_dims(is_right_closest_left_mask, 1, 2)
         else:
             num_r = rr_pair_flag.size(2)
 
-            # [B, num_right, num_right, 2*dim]
+            # [B, N, num_right, 2*dim]
             logits = self._merge_link_representations(
                 unsqueeze_and_expand_dims(is_right_hidden, (1,), (1, seq_len)),
                 unsqueeze_and_expand_dims(x, (2,), (2, num_r))
             )
-            # [B, num_right, num_right, num_links]
+            # [B, N, num_right, num_links]
             logits = self.rr_score(logits)
             logits_mask = is_right_mask.unsqueeze(1) & attention_mask.unsqueeze(2)
             if self.is_feature_in_development:
                 logits_mask = is_right_mask.unsqueeze(1) & is_right.unsqueeze(2)
-            if not logits_mask.any():
-                return logits.new_zeros(tuple())
 
-            input = logits[logits_mask]
-            target = rr_pair_flag[logits_mask].float()
-            if self.is_feature_extra_rr_class:
-                return F.cross_entropy(input, target, reduction="sum")
-            else:
-                return F.binary_cross_entropy_with_logits(input, target, reduction="sum")
+        if not logits_mask.any():
+            return logits.new_zeros(tuple())
+
+        input = logits[logits_mask]
+        target = rr_pair_flag[logits_mask].float()
+        if self.is_feature_extra_rr_class:
+            return F.cross_entropy(input, target, reduction="sum")
+        else:
+            return F.binary_cross_entropy_with_logits(input, target, reduction="sum")
 
     def _generate_forward(
         self,
