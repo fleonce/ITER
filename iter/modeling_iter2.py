@@ -777,7 +777,7 @@ class ITERForRelationExtraction(ITER):
                 # [B, N, nest_depth] -> [B, N, nest_depth, num_right, num_left, T]
                 closest_left_indices,
                 (3, 4, 5),
-                (3, num_right), (4, num_left), (5, self.num_types),
+                (3, num_right), (4, num_left), (5, self.num_links),
             )
             rr_pair_flag = torch.gather(
                 rr_pair_flag,
@@ -792,7 +792,7 @@ class ITERForRelationExtraction(ITER):
                 index=unsqueeze_and_expand_dims(
                     is_right_closest_left_indices,
                     (1, 2, 5),
-                    (1, seq_len), (2, nest_depth), (5, self.num_types)
+                    (1, seq_len), (2, nest_depth), (5, self.links)
                 )
             )
 
