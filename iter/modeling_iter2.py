@@ -792,7 +792,7 @@ class ITERForRelationExtraction(ITER):
                 index=unsqueeze_and_expand_dims(
                     is_right_closest_left_indices,
                     (1, 2, 5),
-                    (1, seq_len), (2, nest_depth), (5, self.links)
+                    (1, seq_len), (2, nest_depth), (5, self.num_links)
                 )
             )
 
